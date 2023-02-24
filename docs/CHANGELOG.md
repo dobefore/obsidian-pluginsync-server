@@ -55,6 +55,23 @@ But another client receive a struct including undefined.field names must the sam
 rework request parameters,such as f[],should add a wrapper for it to be the sane as that in server. make a change on method upload and download.
 should create a test vault for testing use,in case my precious files are affected.
  
+---
+operation missing in meta.
+
+When file delete,server mark them as delete in database.Ok
+
+---
+Work on upload
+receieve files,store file meta and contents separately.Add path field to db meta.
+Modify Upload request struct Pfile,add filestetes.
+
+---
+Work on download
+retrieve file meta and content,send them to client.
+
+---
+adjust some request parameters in client method upload and download to be the same as server. yy
+
 # Sync protocol methods
 ## meta
 Tasks to do:

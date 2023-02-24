@@ -13,9 +13,9 @@ use strum::IntoStaticStr;
 use async_trait::async_trait;
 
 use crate::{
-    db::{fetch_users, DbManager},
+    db::{fetch_users, DbManager, Meta},
     error::ApplicationError,
-    file_process::server_meta,
+    file_process::{download, server_meta, upload},
     request::SyncRequest,
     user::{compute_hash, UserError},
 };
@@ -30,18 +30,18 @@ struct HostKeyResponse {
 }
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct MetaRequest {
-    pub(crate) states: Vec<FileState>,
+    pub(crate) states: Vec<FileInfo>,
 }
 /// state from client
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct FileState {
+#[derive(Debug, Deserialize, Serialize,Default,Clone)]
+pub(crate) struct FileInfo {
     pub(crate) name: String,
     pub(crate) path: String,
-    mtime: usize,
-    ctime: usize,
+    pub(crate) mtime: i64,
+    pub(crate) ctime: i64,
 }
 
-impl FileState {
+impl FileInfo {
     pub(crate) fn path(&self) -> String {
         self.path.to_string()
     }
@@ -54,15 +54,19 @@ impl FileState {
 pub(crate) struct MetaResponse {
     pub(crate) metainner: Vec<MetaInner>,
 }
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone,)]
 pub(crate) struct MetaInner {
-    action: FileAction,
-    fllename: String,
+    pub(crate) action: FileAction,
+    pub(crate) fileinfo:FileInfo,
 }
 
 impl MetaInner {
-    pub(crate) fn new(action: FileAction, fllename: String) -> Self {
-        Self { action, fllename }
+    pub(crate) fn from_fileinfo(action: FileAction, fileinfo:&FileInfo) -> Self {
+
+        Self { action, fileinfo:fileinfo.to_owned() }
+    }
+    pub(crate) fn new(action: FileAction, meta:&Meta) -> Self {
+        Self { action, fileinfo:FileInfo { name:meta.fname(), path:meta.paths(), mtime:meta.mtime(), ctime:meta.ctime() ,} }
     }
 }
 #[derive(IntoStaticStr, Deserialize, Serialize, PartialEq, Eq, Debug, Clone)]
@@ -77,21 +81,21 @@ pub(crate) enum FileAction {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct DownloadResponse {
-    files: Vec<Pfile>,
+pub(crate) struct DownloadResponse {
+    pub(crate) files: Vec<Pfile>,
 }
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct DownloadRequest {
-    filenames: Vec<String>,
+    pub(crate) filenames: Vec<String>,
 }
 #[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct UploadRequesst {
-    files: Vec<Pfile>,
+pub(crate) struct UploadRequest {
+    pub(crate) files: Vec<Pfile>,
 }
 #[derive(Debug, Deserialize, Serialize)]
-struct Pfile {
-    path: String,
-    content: String,
+pub(crate) struct Pfile {
+    pub(crate) states: FileInfo,
+    pub(crate) content: String,
 }
 #[derive(IntoStaticStr, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -116,7 +120,7 @@ pub(crate) trait SyncProtocol: Send + Sync + 'static {
     async fn meta(&self, req: SyncRequest<MetaRequest>) -> Result<HttpResponse, ApplicationError>;
     async fn upload(
         &self,
-        req: SyncRequest<UploadRequesst>,
+        req: SyncRequest<UploadRequest>,
     ) -> Result<HttpResponse, ApplicationError>;
     async fn download(
         &self,
@@ -127,9 +131,7 @@ pub(crate) trait SyncProtocol: Send + Sync + 'static {
 impl SyncProtocol for Arc<Server> {
     async fn meta(&self, req: SyncRequest<MetaRequest>) -> Result<HttpResponse, ApplicationError> {
         let s = self
-            .with_authenticated_user(req, |user, req| {
-                Ok(server_meta(req.json()?, user.db.get_meta()?))
-            })
+            .with_authenticated_user(req, |user, req| Ok(server_meta(req.json()?, &user.db)?))
             .await?;
         Ok(s)
     }
@@ -165,15 +167,21 @@ impl SyncProtocol for Arc<Server> {
     }
     async fn upload(
         &self,
-        req: SyncRequest<UploadRequesst>,
+        req: SyncRequest<UploadRequest>,
     ) -> Result<HttpResponse, ApplicationError> {
-        Ok(HttpResponse::Ok().finish())
+        let s = self
+            .with_authenticated_user(req, |user, req| Ok(upload(req.json()?, &user.db)?))
+            .await?;
+        Ok(s)
     }
     async fn download(
         &self,
         req: SyncRequest<DownloadRequest>,
     ) -> Result<HttpResponse, ApplicationError> {
-        Ok(HttpResponse::Ok().finish())
+        let s = self
+            .with_authenticated_user(req, |user, req| Ok(download(req.json()?, &user.db)?))
+            .await?;
+        Ok(s)
     }
 }
 struct User {

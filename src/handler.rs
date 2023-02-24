@@ -15,7 +15,7 @@ pub async fn sync_handler(
 ) -> actix_web::Result<HttpResponse> {
     let req = req.into_inner();
     let method = method.into_inner();
-    log::info!("method {:?}",method);
+    log::info!("method {:?}", method);
     let server = server.into_inner();
     match method {
         SyncMethod::HostKey => {
@@ -26,12 +26,14 @@ pub async fn sync_handler(
             let resp = server.meta(req.into_output_type()).await?;
             return Ok(resp);
         }
-        SyncMethod::Upload => {let resp = server.upload(req.into_output_type()).await?;
+        SyncMethod::Upload => {
+            let resp = server.upload(req.into_output_type()).await?;
             return Ok(resp);
-}
-        SyncMethod::Download => {let resp = server.download(req.into_output_type()).await?;
+        }
+        SyncMethod::Download => {
+            let resp = server.download(req.into_output_type()).await?;
             return Ok(resp);
-}
+        }
         _ => unreachable!(),
     }
 

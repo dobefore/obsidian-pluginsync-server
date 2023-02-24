@@ -1,10 +1,12 @@
 use std::collections::HashSet;
 
 use crate::{
-    db::Meta,
-    protocol::{MetaInner, MetaRequest, MetaResponse},
+    db::{DbManager, Meta},
+    error::ApplicationError,
+    protocol::{DownloadRequest, MetaInner, MetaRequest, MetaResponse, UploadRequest},
 };
 use actix_web::HttpResponse;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 /// indicates what action has been taken on the file last time,used as a field in [``]
 #[derive(Debug, Serialize, Deserialize)]
@@ -16,15 +18,16 @@ pub(crate) enum FileState {
 /// Meta data includes file name, file size, file index to body,file action taken last time,ctime,mtime.
 pub(crate) fn server_meta(
     meta_request: MetaRequest,
-    server_meta: Option<Vec<Meta>>,
-) -> HttpResponse {
+    db: &DbManager,
+) -> Result<HttpResponse, ApplicationError> {
+    let server_meta = db.get_meta()?;
     let metas = if let Some(server_meta) = server_meta {
         // client empty make server files Download,generally A fike should be maeked deleted when
         // it is not in the client side.But we assume the client is the first time to sync.
         let v = if meta_request.states.is_empty() {
             let v = server_meta
                 .iter()
-                .map(|e| MetaInner::new(crate::protocol::FileAction::Download, e.fname()))
+                .map(|e| MetaInner::new(crate::protocol::FileAction::Download, e))
                 .collect::<Vec<_>>();
             v
         } else {
@@ -62,16 +65,19 @@ pub(crate) fn server_meta(
             //    mark them
             let modify = both_files
                 .iter()
-                .map(|e| MetaInner::new(crate::protocol::FileAction::Modify, e.path()))
+                .map(|e| MetaInner::from_fileinfo(crate::protocol::FileAction::Modify, e))
                 .collect::<Vec<_>>();
             let upload = client_files
                 .iter()
-                .map(|e| MetaInner::new(crate::protocol::FileAction::Upload, e.path()))
+                .map(|e| MetaInner::from_fileinfo(crate::protocol::FileAction::Upload, e))
                 .collect::<Vec<_>>();
             let delete = server_files
                 .iter()
-                .map(|e| MetaInner::new(crate::protocol::FileAction::Delete, e.fname()))
+                .map(|e| MetaInner::new(crate::protocol::FileAction::Delete, &e))
                 .collect::<Vec<_>>();
+            // ,server mark them as delete in database
+            db.update_stetes(&delete)?;
+
             let mut all = vec![];
             all.extend_from_slice(&upload);
             all.extend_from_slice(&delete);
@@ -86,11 +92,26 @@ pub(crate) fn server_meta(
         let v = meta_request
             .states
             .iter()
-            .map(|e| MetaInner::new(crate::protocol::FileAction::Upload, e.path()))
+            .map(|e| MetaInner::from_fileinfo(crate::protocol::FileAction::Upload, e))
             .collect::<Vec<_>>();
         v
     };
-    let resp=MetaResponse {metainner:metas};
-    log::info!("meta resp {:?}",resp);
-    HttpResponse::Ok().json(resp)
+    let resp = MetaResponse { metainner: metas };
+    log::info!("meta resp {:?}", resp);
+    Ok(HttpResponse::Ok().json(resp))
+}
+
+pub(crate) fn upload(
+    req: UploadRequest,
+    db: &DbManager,
+) -> Result<HttpResponse, ApplicationError> {
+    let _ = db.upload(req)?;
+    Ok(HttpResponse::Ok().finish())
+}
+pub(crate) fn download(
+    req: DownloadRequest,
+    db: &DbManager,
+) -> Result<HttpResponse, ApplicationError> {
+    let res = db.download(req)?;
+    Ok(HttpResponse::Ok().json(res))
 }

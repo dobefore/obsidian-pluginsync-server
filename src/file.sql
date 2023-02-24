@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS meta (
     fname TEXT NOT NULL,
     -- index to content
     indexs INTEGER NOT NULL,
+    paths TEXT NOT NULL,
     states TEXT NOT NULL,
     ctime INTEGER NOT NULL,
     mtime INTEGER NOT NULL
