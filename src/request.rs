@@ -127,7 +127,6 @@ where
             // construct struct SyncHeader.
             let sync_header_value = headers.get(&SYNC_HEADER_NAME);
             // let pl = req.take_payload();
-            log::info!("header v {:?}", sync_header_value);
             let sync_request = match sync_header_value {
                 Some(sync_headers) => {
                     // If SYNC_HEADER_NAME is present,

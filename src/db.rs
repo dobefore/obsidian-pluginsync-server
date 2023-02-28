@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::path::PathBuf;
 
-use crate::file_process::FileState;
 use crate::protocol::DownloadRequest;
 use crate::protocol::DownloadResponse;
 use crate::protocol::FileAction;
@@ -19,7 +18,7 @@ pub(crate) struct Meta {
     fname: String,
     indexs: i32,
     pub(crate) paths: String,
-    states: FileAction,
+    pub(crate) states: FileAction,
     ctime: i64,
     mtime: i64,
 }
@@ -39,6 +38,10 @@ impl Meta {
 
     pub(crate) fn mtime(&self) -> i64 {
         self.mtime
+    }
+
+    pub(crate) fn states(&self) -> &FileAction {
+        &self.states
     }
 }
 fn to_meta(row: &rusqlite::Row) -> rusqlite::Result<Meta> {
@@ -108,6 +111,7 @@ impl Db {
                     path: meta.paths,
                     mtime: meta.mtime,
                     ctime: meta.ctime,
+                    oldpath: "".to_string(),
                 },
                 content,
             };
@@ -118,7 +122,6 @@ impl Db {
     fn store_files(&self, req: UploadRequest) -> Result<(), rusqlite::Error> {
         let conn = &self.conn;
         //   let tx = conn.transaction()?;
-        log::info!("stpre files {:?}",req);
         let mut content_stmt = conn.prepare("INSERT INTO content (id, content) VALUES (?, ?)")?;
         let mut meta_stmt  = conn.prepare("INSERT INTO meta (id, fname, indexs, paths, states, ctime, mtime) VALUES (?, ?, ?, ?, ?, ?, ?)")?;
         let mut last_id: i32 = conn
@@ -157,13 +160,19 @@ impl Db {
             match meta.action {
                 FileAction::Delete => {
                     conn.execute(
-                        "UPDATE meta SET states = 'Delete' WHERE fname = ?",
+                        &format!(
+                            "UPDATE meta SET states = '{}' WHERE fname = ?",
+                            serde_json::to_string(&FileAction::Delete).unwrap()
+                        ),
                         &[&meta.fileinfo.name],
                     )?;
                 }
                 FileAction::Modify => {
                     conn.execute(
-                        "UPDATE meta SET states = 'Modify' WHERE fname = ?",
+                        &format!(
+                            "UPDATE meta SET states = '{}' WHERE fname = ?",
+                            serde_json::to_string(&FileAction::Modify).unwrap()
+                        ),
                         &[&meta.fileinfo.name],
                     )?;
                 }
@@ -204,4 +213,9 @@ pub(crate) fn fetch_users(auth_db: &str) -> Result<Option<Vec<(String, String)>>
         .filter_map(|e| e.ok())
         .collect::<Vec<_>>();
     Ok(if r.is_empty() { None } else { Some(r) })
+}
+#[test]
+fn test_to_from_str() {
+    let s = serde_json::to_string(&FileAction::Delete).unwrap();
+    assert_eq!("\"delete\"", s)
 }

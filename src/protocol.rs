@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     fs::create_dir_all,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex}, default,
 };
 
 use actix_web::{web, HttpResponse};
@@ -30,15 +30,19 @@ struct HostKeyResponse {
 }
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct MetaRequest {
-    pub(crate) states: Vec<FileInfo>,
+    // pub(crate) states: Vec<FileInfo>,
+    pub(crate) states: Vec<MetaInner>,
 }
 /// state from client
-#[derive(Debug, Deserialize, Serialize,Default,Clone)]
+#[derive(Debug, Deserialize, Serialize, Default, Clone,Hash,PartialEq, Eq)]
 pub(crate) struct FileInfo {
     pub(crate) name: String,
     pub(crate) path: String,
     pub(crate) mtime: i64,
     pub(crate) ctime: i64,
+    // it is used when the file is to be written to server db,just create an index
+    // to the original flle content if the original exist in db meta.
+    pub(crate) oldpath: String,
 }
 
 impl FileInfo {
@@ -54,22 +58,33 @@ impl FileInfo {
 pub(crate) struct MetaResponse {
     pub(crate) metainner: Vec<MetaInner>,
 }
-#[derive(Debug, Deserialize, Serialize, Clone,)]
+#[derive(Debug, Deserialize, Serialize, Clone,Default,Hash,PartialEq, Eq)]
 pub(crate) struct MetaInner {
     pub(crate) action: FileAction,
-    pub(crate) fileinfo:FileInfo,
+    pub(crate) fileinfo: FileInfo,
 }
 
 impl MetaInner {
-    pub(crate) fn from_fileinfo(action: FileAction, fileinfo:&FileInfo) -> Self {
-
-        Self { action, fileinfo:fileinfo.to_owned() }
+    pub(crate) fn from_fileinfo(action: FileAction, fileinfo: &FileInfo) -> Self {
+        Self {
+            action,
+            fileinfo: fileinfo.to_owned(),
+        }
     }
-    pub(crate) fn new(action: FileAction, meta:&Meta) -> Self {
-        Self { action, fileinfo:FileInfo { name:meta.fname(), path:meta.paths(), mtime:meta.mtime(), ctime:meta.ctime() ,} }
+    pub(crate) fn new(action: FileAction, meta: &Meta) -> Self {
+        Self {
+            action,
+            fileinfo: FileInfo {
+                name: meta.fname(),
+                path: meta.paths(),
+                mtime: meta.mtime(),
+                ctime: meta.ctime(),
+                oldpath: "".to_string(),
+            },
+        }
     }
 }
-#[derive(IntoStaticStr, Deserialize, Serialize, PartialEq, Eq, Debug, Clone)]
+#[derive(IntoStaticStr, Deserialize, Serialize, PartialEq, Eq, Debug, Clone,Default,Hash)]
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
 pub(crate) enum FileAction {
@@ -78,6 +93,9 @@ pub(crate) enum FileAction {
     Delete,
     Chunk,
     Modify,
+    /// for client sending request meta .those files without file event
+     #[default]
+    Absent,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -117,6 +135,9 @@ pub(crate) trait SyncProtocol: Send + Sync + 'static {
         &self,
         req: SyncRequest<HostKeyRequest>,
     ) -> Result<HttpResponse, ApplicationError>;
+    /// As this method comes first,make no changes to it.
+    ///
+    /// It is for full sync meta checking
     async fn meta(&self, req: SyncRequest<MetaRequest>) -> Result<HttpResponse, ApplicationError>;
     async fn upload(
         &self,

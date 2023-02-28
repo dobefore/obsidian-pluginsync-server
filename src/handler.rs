@@ -36,6 +36,4 @@ pub async fn sync_handler(
         }
         _ => unreachable!(),
     }
-
-    Ok(HttpResponse::Ok().finish())
 }

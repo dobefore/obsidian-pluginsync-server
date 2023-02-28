@@ -72,6 +72,31 @@ retrieve file meta and content,send them to client.
 ---
 adjust some request parameters in client method upload and download to be the same as server. yy
 
+---
+finish work adjusting meta code to allow for file stats and file events
+but give error Json parsing error: missing field `action` at line 1 column 160.It is caused by out-dated client plugin code.
+
+And some client-side error.
+1. check folder exist before creating
+2. check file exist before sppending file events to queue.
+
+---
+Uncaught (in promise) TypeError: Cannot read properties of undefined (reading 'mtime')
+    at setFileInfo (file_event_type.ts:35:20)
+    at async SyncPlugin.appendWatchEvent (main.ts:81:18)
+    at async SyncPlugin.watchVaultCreate (main.ts:60:2)
+
+This is caused when downloading files from server.In this method,client use create method,which will be caught as a create event,maybe no mtime.
+So better to deal with this before append to queue.
+
+---
+some problem
+files does not download to mobile.I assume that it is related to obsidian mobile verion,update to mobile 1.4.2. Even though installing latest version of obsidian,the behaviour is the same.
+
+upload multiple copies of same file name
+
+It's weird that sync does not work completely on android 1.4.0.It does not send http requests.
+
 # Sync protocol methods
 ## meta
 Tasks to do:
